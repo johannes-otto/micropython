@@ -60,6 +60,7 @@
 #include "usb.h"
 #include "fsusermount.h"
 #include "portmodules.h"
+#include "ST7735.h"
 
 /// \module pyb - functions related to the pyboard
 ///
@@ -610,6 +611,7 @@ STATIC const mp_map_elem_t pyb_module_globals_table[] = {
 #if MICROPY_HW_HAS_LCD
     { MP_OBJ_NEW_QSTR(MP_QSTR_LCD), (mp_obj_t)&pyb_lcd_type },
 #endif
+    { MP_OBJ_NEW_QSTR(MP_QSTR_TFT), (mp_obj_t)&pyb_tft_type },
 };
 
 STATIC MP_DEFINE_CONST_DICT(pyb_module_globals, pyb_module_globals_table);

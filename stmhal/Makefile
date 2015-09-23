@@ -55,18 +55,21 @@ CFLAGS += $(COPT)
 CFLAGS += -Iboards/$(BOARD)
 CFLAGS += -DSTM32_HAL_H='<stm32$(MCU_SERIES)xx_hal.h>'
 
+#CFLAGS += -O20
+
 LDFLAGS = -nostdlib -T $(LD_FILE) -Map=$(@:.elf=.map) --cref
 LIBS =
 
 # Debugging/Optimization
-ifeq ($(DEBUG), 1)
-CFLAGS += -g -DPENDSV_DEBUG
-COPT = -O0
-else
+#ifeq ($(DEBUG), 1)
+#CFLAGS += -g -DPENDSV_DEBUG
+#COPT = -O0
+#else
 CFLAGS += -fdata-sections -ffunction-sections
+#COPT += -Os -DNDEBUG
 COPT += -Os -DNDEBUG
 LDFLAGS += --gc-sections
-endif
+#endif
 
 # uncomment this if you want libgcc
 #LIBS += $(shell $(CC) -print-libgcc-file-name)
@@ -242,6 +245,9 @@ SRC_MOD += $(addprefix $(CC3000_DIR)/src/,\
 	patch_prog.c \
 	)
 endif
+
+CFLAGS_MOD += -DMICROPY_PY_TFT=1
+SRC_MOD += ST7735.c
 
 OBJ =
 OBJ += $(PY_O)
