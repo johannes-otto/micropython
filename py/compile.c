@@ -58,8 +58,6 @@ typedef enum {
 #define EMIT_ARG(fun, ...) (comp->emit_method_table->fun(comp->emit, __VA_ARGS__))
 #define EMIT_LOAD_FAST(qst, local_num) (comp->emit_method_table->load_id.fast(comp->emit, qst, local_num))
 #define EMIT_LOAD_GLOBAL(qst) (comp->emit_method_table->load_id.global(comp->emit, qst))
-#define EMIT_INLINE_ASM(fun) (comp->emit_inline_asm_method_table->fun(comp->emit_inline_asm))
-#define EMIT_INLINE_ASM_ARG(fun, ...) (comp->emit_inline_asm_method_table->fun(comp->emit_inline_asm, __VA_ARGS__))
 
 #else
 
@@ -70,6 +68,9 @@ typedef enum {
 #define EMIT_LOAD_GLOBAL(qst) (mp_emit_bc_load_global(comp->emit, qst))
 
 #endif
+
+#define EMIT_INLINE_ASM(fun) (comp->emit_inline_asm_method_table->fun(comp->emit_inline_asm))
+#define EMIT_INLINE_ASM_ARG(fun, ...) (comp->emit_inline_asm_method_table->fun(comp->emit_inline_asm, __VA_ARGS__))
 
 // elements in this struct are ordered to make it compact
 typedef struct _compiler_t {
@@ -293,7 +294,9 @@ STATIC mp_parse_node_t fold_constants(compiler_t *comp, mp_parse_node_t pn, mp_m
                         // pass
                     } else if (MP_PARSE_NODE_IS_TOKEN_KIND(pns->nodes[1], MP_TOKEN_OP_PERCENT)) {
                         // int%int
-                        pn = mp_parse_node_new_leaf(MP_PARSE_NODE_SMALL_INT, mp_small_int_modulo(arg0, arg1));
+                        if (arg1 != 0) {
+                            pn = mp_parse_node_new_leaf(MP_PARSE_NODE_SMALL_INT, mp_small_int_modulo(arg0, arg1));
+                        }
                     } else {
                         assert(MP_PARSE_NODE_IS_TOKEN_KIND(pns->nodes[1], MP_TOKEN_OP_DBL_SLASH)); // should be
                         if (arg1 != 0) {
@@ -3315,7 +3318,7 @@ STATIC void scope_compute_things(scope_t *scope) {
     }
 }
 
-mp_obj_t mp_compile(mp_parse_node_t pn, qstr source_file, uint emit_opt, bool is_repl) {
+mp_obj_t mp_compile(mp_parse_tree_t *parse_tree, qstr source_file, uint emit_opt, bool is_repl) {
     // put compiler state on the stack, it's relatively small
     compiler_t comp_state = {0};
     compiler_t *comp = &comp_state;
@@ -3324,7 +3327,7 @@ mp_obj_t mp_compile(mp_parse_node_t pn, qstr source_file, uint emit_opt, bool is
     comp->is_repl = is_repl;
 
     // create the module scope
-    scope_t *module_scope = scope_new_and_link(comp, SCOPE_MODULE, pn, emit_opt);
+    scope_t *module_scope = scope_new_and_link(comp, SCOPE_MODULE, parse_tree->root, emit_opt);
 
     // optimise constants (scope must be set for error messages to work)
     comp->scope_cur = module_scope;
@@ -3384,7 +3387,6 @@ mp_obj_t mp_compile(mp_parse_node_t pn, qstr source_file, uint emit_opt, bool is
                 emit_inline_thumb = emit_inline_thumb_new(max_num_labels);
             }
             comp->emit = NULL;
-            comp->emit_method_table = NULL;
             comp->emit_inline_asm = emit_inline_thumb;
             comp->emit_inline_asm_method_table = &emit_inline_thumb_method_table;
             compile_scope_inline_asm(comp, s, MP_PASS_CODE_SIZE);
@@ -3483,7 +3485,7 @@ mp_obj_t mp_compile(mp_parse_node_t pn, qstr source_file, uint emit_opt, bool is
 #endif
 
     // free the parse tree
-    mp_parse_node_free(module_scope->pn);
+    mp_parse_tree_clear(parse_tree);
 
     // free the scopes
     mp_raw_code_t *outer_raw_code = module_scope->raw_code;

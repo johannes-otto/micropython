@@ -3,24 +3,23 @@ UART test for the CC3200 based boards.
 UART0 and UART1 must be connected together for this test to pass.
 '''
 
-from pyb import UART
-from pyb import Pin
+from machine import UART
+from machine import Pin
 import os
-import pyb
 import time
 
-machine = os.uname().machine
-if 'LaunchPad' in machine:
+mch = os.uname().machine
+if 'LaunchPad' in mch:
     uart_id_range = range(0, 2)
     uart_pins = [[('GP12', 'GP13'), ('GP12', 'GP13', 'GP7', 'GP6')], [('GP16', 'GP17'), ('GP16', 'GP17', 'GP7', 'GP6')]]
-elif 'WiPy' in machine:
+elif 'WiPy' in mch:
     uart_id_range = range(0, 2)
     uart_pins = [[('GP12', 'GP13'), ('GP12', 'GP13', 'GP7', 'GP6')], [('GP16', 'GP17'), ('GP16', 'GP17', 'GP7', 'GP6')]]
 else:
     raise Exception('Board not supported!')
 
-# just in case we have stdio duplicated on any of the uarts
-pyb.repl_uart(None)
+# just in case we have the repl duplicated on any of the uarts
+os.dupterm(None)
 
 for uart_id in uart_id_range:
     uart = UART(uart_id, 38400)

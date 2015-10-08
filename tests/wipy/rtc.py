@@ -2,12 +2,12 @@
 RTC test for the CC3200 based boards.
 '''
 
-from pyb import RTC
+from machine import RTC
 import os
 import time
 
-machine = os.uname().machine
-if not 'LaunchPad' in machine and not 'WiPy' in machine:
+mch = os.uname().machine
+if not 'LaunchPad' in mch and not 'WiPy' in mch:
     raise Exception('Board not supported!')
 
 rtc = RTC()
@@ -66,21 +66,38 @@ rtc.alarm(0, 5000)
 rtc.alarm(time=2000)
 time.sleep_ms(1000)
 left = rtc.alarm_left()
-print(abs(left-1000) < 20)
+print(abs(left-1000) <= 10)
 time.sleep_ms(1000)
 print(rtc.alarm_left() == 0)
 time.sleep_ms(100)
-print(rtc.alarm_left() == 0)
+print(rtc.alarm_left(0) == 0)
+
+rtc.alarm(time=1000, repeat=True)
+time.sleep_ms(1500)
+left = rtc.alarm_left()
+print(abs(left-500) <= 15)
 
 rtc.init((2015, 8, 29, 9, 0, 0, 0, None))
 rtc.alarm(time=(2015, 8, 29, 9, 0, 45))
 time.sleep_ms(1000)
 left = rtc.alarm_left()
-print(abs(left-44000) < 100)
+print(abs(left-44000) <= 90)
+rtc.alarm_cancel()
+rtc.deinit()
 
 # next ones must raise
 try:
     rtc.alarm(5000)
+except:
+    print('Exception')
+
+try:
+    rtc.alarm_left(1)
+except:
+    print('Exception')
+
+try:
+    rtc.alarm_cancel(1)
 except:
     print('Exception')
 

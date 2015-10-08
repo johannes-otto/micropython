@@ -54,7 +54,7 @@
 /******************************************************************************
  DECLARE PUBLIC DATA
  ******************************************************************************/
-pybsd_obj_t pybsd_obj = {.pin_clk = MP_OBJ_NULL, .enabled = false};
+pybsd_obj_t pybsd_obj;
 
 /******************************************************************************
  DECLARE PRIVATE DATA
@@ -95,17 +95,13 @@ STATIC mp_obj_t pyb_sd_init_helper (pybsd_obj_t *self, const mp_arg_val_t *args)
     mp_obj_t pins_o = args[0].u_obj;
     if (pins_o != mp_const_none) {
         mp_obj_t *pins;
-        mp_uint_t n_pins = MP_ARRAY_SIZE(pyb_sd_def_pin);
         if (pins_o == MP_OBJ_NULL) {
             // use the default pins
             pins = (mp_obj_t *)pyb_sd_def_pin;
         } else {
-            mp_obj_get_array(pins_o, &n_pins, &pins);
-            if (n_pins != MP_ARRAY_SIZE(pyb_sd_def_pin)) {
-                nlr_raise(mp_obj_new_exception_msg(&mp_type_ValueError, mpexception_value_invalid_arguments));
-            }
+            mp_obj_get_array_fixed_n(pins_o, MP_ARRAY_SIZE(pyb_sd_def_pin), &pins);
         }
-        pin_assign_pins_af (pins, n_pins, PIN_TYPE_STD_PU, PIN_FN_SD, 0);
+        pin_assign_pins_af (pins, MP_ARRAY_SIZE(pyb_sd_def_pin), PIN_TYPE_STD_PU, PIN_FN_SD, 0);
         // save the pins clock
         self->pin_clk = pin_find(pins[0]);
     }
@@ -116,7 +112,7 @@ STATIC mp_obj_t pyb_sd_init_helper (pybsd_obj_t *self, const mp_arg_val_t *args)
     }
 
     // register it with the sleep module
-    pybsleep_add ((const mp_obj_t)self, (WakeUpCB_t)pyb_sd_hw_init);
+    pyb_sleep_add ((const mp_obj_t)self, (WakeUpCB_t)pyb_sd_hw_init);
     return mp_const_none;
 }
 
@@ -163,7 +159,7 @@ STATIC mp_obj_t pyb_sd_deinit (mp_obj_t self_in) {
     // de-initialze the sd card at diskio level
     sd_disk_deinit();
     // unregister it from the sleep module
-    pybsleep_remove (self);
+    pyb_sleep_remove (self);
     return mp_const_none;
 }
 STATIC MP_DEFINE_CONST_FUN_OBJ_1(pyb_sd_deinit_obj, pyb_sd_deinit);
