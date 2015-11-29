@@ -32,6 +32,8 @@
 #include "py/nlr.h"
 #include "py/obj.h"
 #include "portmodules.h"
+#include "font_petme128_8x8.h"
+#include "ST7735.h"
 
 // To use compile-time constants we are restricted to 31-bit numbers (a small int,
 // so it fits in a Micro Python object pointer).  Thus, when extracting a constant
