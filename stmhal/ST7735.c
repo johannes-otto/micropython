@@ -41,7 +41,7 @@
 #include "genhdr/pins.h"
 #include "bufhelper.h"
 #include "spi.h"
-#include "mphal.h"
+#include "py/mphal.h"
 #include "ST7735.h"
 #include "math.h"
 #include "py/objtuple.h"
