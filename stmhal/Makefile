@@ -32,7 +32,7 @@ DEVICE=0483:df11
 
 CROSS_COMPILE = arm-none-eabi-
 
-INC =  -I.
+INC += -I.
 INC += -I..
 INC += -I$(BUILD)
 INC += -I$(CMSIS_DIR)/inc
@@ -60,16 +60,18 @@ CFLAGS += -DSTM32_HAL_H='<stm32$(MCU_SERIES)xx_hal.h>'
 LDFLAGS = -nostdlib -T $(LD_FILE) -Map=$(@:.elf=.map) --cref
 LIBS =
 
-# Debugging/Optimization
-#ifeq ($(DEBUG), 1)
-#CFLAGS += -g -DPENDSV_DEBUG
-#COPT = -O0
-#else
+# Remove uncalled code from the final image.
 CFLAGS += -fdata-sections -ffunction-sections
-#COPT += -Os -DNDEBUG
-COPT += -Os -DNDEBUG
 LDFLAGS += --gc-sections
-#endif
+
+# Debugging/Optimization
+
+ifeq ($(DEBUG), 1)
+CFLAGS += -g -DPENDSV_DEBUG
+COPT = -O0
+else
+COPT += -Os -DNDEBUG
+endif
 
 # uncomment this if you want libgcc
 #LIBS += $(shell $(CC) -print-libgcc-file-name)
@@ -106,6 +108,8 @@ SRC_LIB = $(addprefix lib/,\
 	mp-readline/readline.c \
 	netutils/netutils.c \
 	timeutils/timeutils.c \
+	utils/pyexec.c \
+	utils/printf.c \
 	)
 
 SRC_C = \
@@ -116,7 +120,7 @@ SRC_C = \
 	usbd_desc.c \
 	usbd_cdc_interface.c \
 	usbd_msc_storage.c \
-	mphal.c \
+	mphalport.c \
 	irq.c \
 	pendsv.c \
 	systick.c  \
@@ -132,12 +136,11 @@ SRC_C = \
 	uart.c \
 	can.c \
 	usb.c \
-	printf.c \
 	gccollect.c \
 	pybstdio.c \
-	pyexec.c \
 	help.c \
 	input.c \
+	modmachine.c \
 	modpyb.c \
 	modstm.c \
 	moduos.c \
@@ -155,7 +158,6 @@ SRC_C = \
 	storage.c \
 	file.c \
 	sdcard.c \
-	fsusermount.c \
 	diskio.c \
 	ffconf.c \
 	lcd.c \
@@ -290,7 +292,7 @@ $(BUILD)/firmware.hex: $(BUILD)/firmware.elf
 
 $(BUILD)/firmware.elf: $(OBJ)
 	$(ECHO) "LINK $@"
-	$(Q)$(LD) $(LDFLAGS) -o $@ $(OBJ) $(LIBS)
+	$(Q)$(LD) $(LDFLAGS) -o $@ $^ $(LIBS)
 	$(Q)$(SIZE) $@
 
 MAKE_PINS = boards/make-pins.py

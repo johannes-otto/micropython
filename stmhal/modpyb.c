@@ -33,12 +33,13 @@
 #include "py/nlr.h"
 #include "py/obj.h"
 #include "py/gc.h"
+#include "py/builtin.h"
+#include "lib/utils/pyexec.h"
 #include "lib/fatfs/ff.h"
 #include "lib/fatfs/diskio.h"
 #include "gccollect.h"
 #include "irq.h"
 #include "systick.h"
-#include "pyexec.h"
 #include "led.h"
 #include "pin.h"
 #include "timer.h"
@@ -58,7 +59,6 @@
 #include "dac.h"
 #include "lcd.h"
 #include "usb.h"
-#include "fsusermount.h"
 #include "portmodules.h"
 #include "ST7735.h"
 
@@ -348,6 +348,7 @@ STATIC mp_obj_t pyb_freq(mp_uint_t n_args, const mp_obj_t *args) {
     }
 }
 STATIC MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(pyb_freq_obj, 0, 4, pyb_freq);
+#include "modmachine.h"
 
 /// \function millis()
 /// Returns the number of milliseconds since the board was last reset.
@@ -411,136 +412,26 @@ STATIC mp_obj_t pyb_elapsed_micros(mp_obj_t start) {
 }
 STATIC MP_DEFINE_CONST_FUN_OBJ_1(pyb_elapsed_micros_obj, pyb_elapsed_micros);
 
-/// \function delay(ms)
-/// Delay for the given number of milliseconds.
-STATIC mp_obj_t pyb_delay(mp_obj_t ms_in) {
-    mp_int_t ms = mp_obj_get_int(ms_in);
-    if (ms >= 0) {
-        HAL_Delay(ms);
-    }
-    return mp_const_none;
-}
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(pyb_delay_obj, pyb_delay);
-
-/// \function udelay(us)
-/// Delay for the given number of microseconds.
-STATIC mp_obj_t pyb_udelay(mp_obj_t usec_in) {
-    mp_int_t usec = mp_obj_get_int(usec_in);
-    if (usec > 0) {
-        sys_tick_udelay(usec);
-    }
-    return mp_const_none;
-}
-STATIC MP_DEFINE_CONST_FUN_OBJ_1(pyb_udelay_obj, pyb_udelay);
-
-/// \function stop()
-STATIC mp_obj_t pyb_stop(void) {
-    // takes longer to wake but reduces stop current
-    HAL_PWREx_EnableFlashPowerDown();
-
-    HAL_PWR_EnterSTOPMode(PWR_LOWPOWERREGULATOR_ON, PWR_STOPENTRY_WFI);
-
-    // reconfigure the system clock after waking up
-
-    // enable HSE
-    __HAL_RCC_HSE_CONFIG(RCC_HSE_ON);
-    while (!__HAL_RCC_GET_FLAG(RCC_FLAG_HSERDY)) {
-    }
-
-    // enable PLL
-    __HAL_RCC_PLL_ENABLE();
-    while (!__HAL_RCC_GET_FLAG(RCC_FLAG_PLLRDY)) {
-    }
-
-    // select PLL as system clock source
-    MODIFY_REG(RCC->CFGR, RCC_CFGR_SW, RCC_SYSCLKSOURCE_PLLCLK);
-    while (__HAL_RCC_GET_SYSCLK_SOURCE() != RCC_CFGR_SWS_PLL) {
-    }
-
-    return mp_const_none;
-}
-MP_DEFINE_CONST_FUN_OBJ_0(pyb_stop_obj, pyb_stop);
-
-/// \function standby()
-STATIC mp_obj_t pyb_standby(void) {
-#if defined(MCU_SERIES_F7)
-    printf("pyb.standby not supported yet\n");
-#else
-    // We need to clear the PWR wake-up-flag before entering standby, since
-    // the flag may have been set by a previous wake-up event.  Furthermore,
-    // we need to disable the wake-up sources while clearing this flag, so
-    // that if a source is active it does actually wake the device.
-    // See section 5.3.7 of RM0090.
-
-    // Note: we only support RTC ALRA, ALRB, WUT and TS.
-    // TODO support TAMP and WKUP (PA0 external pin).
-    uint32_t irq_bits = RTC_CR_ALRAIE | RTC_CR_ALRBIE | RTC_CR_WUTIE | RTC_CR_TSIE;
-
-    // save RTC interrupts
-    uint32_t save_irq_bits = RTC->CR & irq_bits;
-
-    // disable RTC interrupts
-    RTC->CR &= ~irq_bits;
-
-    // clear RTC wake-up flags
-    RTC->ISR &= ~(RTC_ISR_ALRAF | RTC_ISR_ALRBF | RTC_ISR_WUTF | RTC_ISR_TSF);
-
-    // clear global wake-up flag
-    PWR->CR |= PWR_CR_CWUF;
-
-    // enable previously-enabled RTC interrupts
-    RTC->CR |= save_irq_bits;
-
-    // enter standby mode
-    HAL_PWR_EnterSTANDBYMode();
-    // we never return; MCU is reset on exit from standby
-#endif
-    return mp_const_none;
-}
-MP_DEFINE_CONST_FUN_OBJ_0(pyb_standby_obj, pyb_standby);
-
-/// \function repl_uart(uart)
-/// Get or set the UART object that the REPL is repeated on.
-STATIC mp_obj_t pyb_repl_uart(mp_uint_t n_args, const mp_obj_t *args) {
-    if (n_args == 0) {
-        if (MP_STATE_PORT(pyb_stdio_uart) == NULL) {
-            return mp_const_none;
-        } else {
-            return MP_STATE_PORT(pyb_stdio_uart);
-        }
-    } else {
-        if (args[0] == mp_const_none) {
-            MP_STATE_PORT(pyb_stdio_uart) = NULL;
-        } else if (mp_obj_get_type(args[0]) == &pyb_uart_type) {
-            MP_STATE_PORT(pyb_stdio_uart) = args[0];
-        } else {
-            nlr_raise(mp_obj_new_exception_msg(&mp_type_ValueError, "need a UART object"));
-        }
-        return mp_const_none;
-    }
-}
-STATIC MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(pyb_repl_uart_obj, 0, 1, pyb_repl_uart);
-
 MP_DECLARE_CONST_FUN_OBJ(pyb_main_obj); // defined in main.c
 
 STATIC const mp_map_elem_t pyb_module_globals_table[] = {
     { MP_OBJ_NEW_QSTR(MP_QSTR___name__), MP_OBJ_NEW_QSTR(MP_QSTR_pyb) },
 
-    { MP_OBJ_NEW_QSTR(MP_QSTR_bootloader), (mp_obj_t)&pyb_bootloader_obj },
-    { MP_OBJ_NEW_QSTR(MP_QSTR_hard_reset), (mp_obj_t)&pyb_hard_reset_obj },
-    { MP_OBJ_NEW_QSTR(MP_QSTR_info), (mp_obj_t)&pyb_info_obj },
-    { MP_OBJ_NEW_QSTR(MP_QSTR_unique_id), (mp_obj_t)&pyb_unique_id_obj },
-    { MP_OBJ_NEW_QSTR(MP_QSTR_freq), (mp_obj_t)&pyb_freq_obj },
+    { MP_OBJ_NEW_QSTR(MP_QSTR_bootloader), (mp_obj_t)&machine_bootloader_obj },
+    { MP_OBJ_NEW_QSTR(MP_QSTR_hard_reset), (mp_obj_t)&machine_reset_obj },
+    { MP_OBJ_NEW_QSTR(MP_QSTR_info), (mp_obj_t)&machine_info_obj },
+    { MP_OBJ_NEW_QSTR(MP_QSTR_unique_id), (mp_obj_t)&machine_unique_id_obj },
+    { MP_OBJ_NEW_QSTR(MP_QSTR_freq), (mp_obj_t)&machine_freq_obj },
     { MP_OBJ_NEW_QSTR(MP_QSTR_repl_info), (mp_obj_t)&pyb_set_repl_info_obj },
 
     { MP_OBJ_NEW_QSTR(MP_QSTR_wfi), (mp_obj_t)&pyb_wfi_obj },
     { MP_OBJ_NEW_QSTR(MP_QSTR_disable_irq), (mp_obj_t)&pyb_disable_irq_obj },
     { MP_OBJ_NEW_QSTR(MP_QSTR_enable_irq), (mp_obj_t)&pyb_enable_irq_obj },
 
-    { MP_OBJ_NEW_QSTR(MP_QSTR_stop), (mp_obj_t)&pyb_stop_obj },
-    { MP_OBJ_NEW_QSTR(MP_QSTR_standby), (mp_obj_t)&pyb_standby_obj },
+    { MP_OBJ_NEW_QSTR(MP_QSTR_stop), (mp_obj_t)&machine_sleep_obj },
+    { MP_OBJ_NEW_QSTR(MP_QSTR_standby), (mp_obj_t)&machine_deepsleep_obj },
     { MP_OBJ_NEW_QSTR(MP_QSTR_main), (mp_obj_t)&pyb_main_obj },
-    { MP_OBJ_NEW_QSTR(MP_QSTR_repl_uart), (mp_obj_t)&pyb_repl_uart_obj },
+    { MP_OBJ_NEW_QSTR(MP_QSTR_repl_uart), (mp_obj_t)&mod_os_dupterm_obj },
 
     { MP_OBJ_NEW_QSTR(MP_QSTR_usb_mode), (mp_obj_t)&pyb_usb_mode_obj },
     { MP_OBJ_NEW_QSTR(MP_QSTR_hid_mouse), (mp_obj_t)&pyb_usb_hid_mouse_obj },
@@ -555,8 +446,8 @@ STATIC const mp_map_elem_t pyb_module_globals_table[] = {
     { MP_OBJ_NEW_QSTR(MP_QSTR_elapsed_millis), (mp_obj_t)&pyb_elapsed_millis_obj },
     { MP_OBJ_NEW_QSTR(MP_QSTR_micros), (mp_obj_t)&pyb_micros_obj },
     { MP_OBJ_NEW_QSTR(MP_QSTR_elapsed_micros), (mp_obj_t)&pyb_elapsed_micros_obj },
-    { MP_OBJ_NEW_QSTR(MP_QSTR_delay), (mp_obj_t)&pyb_delay_obj },
-    { MP_OBJ_NEW_QSTR(MP_QSTR_udelay), (mp_obj_t)&pyb_udelay_obj },
+    { MP_OBJ_NEW_QSTR(MP_QSTR_delay), (mp_obj_t)&time_sleep_ms_obj },
+    { MP_OBJ_NEW_QSTR(MP_QSTR_udelay), (mp_obj_t)&time_sleep_us_obj },
     { MP_OBJ_NEW_QSTR(MP_QSTR_sync), (mp_obj_t)&mod_os_sync_obj },
     { MP_OBJ_NEW_QSTR(MP_QSTR_mount), (mp_obj_t)&pyb_mount_obj },
 

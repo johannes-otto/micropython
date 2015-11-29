@@ -45,6 +45,7 @@ static JavaVM *jvm;
 static JNIEnv *env;
 static jclass Class_class;
 static jclass String_class;
+static jmethodID Class_getName_mid;
 static jmethodID Class_getField_mid;
 static jmethodID Class_getMethods_mid;
 static jmethodID Class_getConstructors_mid;
@@ -233,6 +234,14 @@ STATIC void jobject_attr(mp_obj_t self_in, qstr attr_in, mp_obj_t *dest) {
     }
 }
 
+STATIC void get_jclass_name(jobject obj, char *buf) {
+    jclass obj_class = JJ(GetObjectClass, obj);
+    jstring name = JJ(CallObjectMethod, obj_class, Class_getName_mid);
+    jint len = JJ(GetStringLength, name);
+    JJ(GetStringUTFRegion, name, 0, len, buf);
+    check_exception();
+}
+
 STATIC mp_obj_t jobject_subscr(mp_obj_t self_in, mp_obj_t index, mp_obj_t value) {
     mp_obj_jobject_t *self = self_in;
     if (!JJ(IsInstanceOf, self->obj, List_class)) {
@@ -265,13 +274,27 @@ STATIC mp_obj_t jobject_unary_op(mp_uint_t op, mp_obj_t self_in) {
         case MP_UNARY_OP_LEN: {
             jint len = JJ(CallIntMethod, self->obj, List_size_mid);
             if (op == MP_UNARY_OP_BOOL) {
-                return MP_BOOL(len != 0);
+                return mp_obj_new_bool(len != 0);
             }
             return MP_OBJ_NEW_SMALL_INT(len);
         }
         default:
             return MP_OBJ_NULL; // op not supported
     }
+}
+
+// TODO: subscr_load_adaptor & subscr_getiter convenience functions
+// should be moved to common location for reuse.
+STATIC mp_obj_t subscr_load_adaptor(mp_obj_t self_in, mp_obj_t index_in) {
+    return mp_obj_subscr(self_in, index_in, MP_OBJ_SENTINEL);
+}
+MP_DEFINE_CONST_FUN_OBJ_2(subscr_load_adaptor_obj, subscr_load_adaptor);
+
+// .getiter special method which returns iterator which works in terms
+// of object subscription.
+STATIC mp_obj_t subscr_getiter(mp_obj_t self_in) {
+    mp_obj_t dest[2] = {(mp_obj_t)&subscr_load_adaptor_obj, self_in};
+    return mp_obj_new_getitem_iter(dest);
 }
 
 STATIC const mp_obj_type_t jobject_type = {
@@ -281,6 +304,7 @@ STATIC const mp_obj_type_t jobject_type = {
     .unary_op = jobject_unary_op,
     .attr = jobject_attr,
     .subscr = jobject_subscr,
+    .getiter = subscr_getiter,
 //    .locals_dict = (mp_obj_t)&jobject_locals_dict,
 };
 
@@ -346,11 +370,29 @@ STATIC bool py2jvalue(const char **jtypesig, mp_obj_t arg, jvalue *out) {
             return false;
         }
     } else if (type == &jobject_type) {
-        printf("TODO: Check java arg type!!\n");
-        while (isalpha(*arg_type) || *arg_type == '.') {
+        bool is_object = false;
+        const char *expected_type = arg_type;
+        while (1) {
+            if (isalpha(*arg_type)) {
+            } else if (*arg_type == '.') {
+                is_object = true;
+            } else {
+                break;
+            }
             arg_type++;
         }
+        if (!is_object) {
+            return false;
+        }
         mp_obj_jobject_t *jo = arg;
+        if (!MATCH(expected_type, "java.lang.Object")) {
+            char class_name[64];
+            get_jclass_name(jo->obj, class_name);
+            //printf("Arg class: %s\n", class_name);
+            if (strcmp(class_name, expected_type) != 0) {
+                return false;
+            }
+        }
         out->l = jo->obj;
     } else if (type == &mp_type_bool) {
         if (IMATCH(arg_type, "boolean")) {
@@ -450,15 +492,19 @@ STATIC mp_obj_t call_method(jobject obj, const char *name, jarray methods, bool 
             } else {
                 if (MATCH(ret_type, "void")) {
                     JJ(CallVoidMethodA, obj, method_id, jargs);
+                    check_exception();
                     ret = mp_const_none;
                 } else if (MATCH(ret_type, "int")) {
                     jint res = JJ(CallIntMethodA, obj, method_id, jargs);
+                    check_exception();
                     ret = mp_obj_new_int(res);
                 } else if (MATCH(ret_type, "boolean")) {
                     jboolean res = JJ(CallBooleanMethodA, obj, method_id, jargs);
+                    check_exception();
                     ret = mp_obj_new_bool(res);
                 } else if (is_object_type(ret_type)) {
                     res = JJ(CallObjectMethodA, obj, method_id, jargs);
+                    check_exception();
                     ret = new_jobject(res);
                 } else {
                     JJ(ReleaseStringUTFChars, name_o, decl);
@@ -547,6 +593,8 @@ STATIC void create_jvm() {
     Object_toString_mid = JJ(GetMethodID, Object_class, "toString",
                                      "()Ljava/lang/String;");
 
+    Class_getName_mid = (*env)->GetMethodID(env, Class_class, "getName",
+                                     "()Ljava/lang/String;");
     Class_getField_mid = (*env)->GetMethodID(env, Class_class, "getField",
                                      "(Ljava/lang/String;)Ljava/lang/reflect/Field;");
     Class_getMethods_mid = (*env)->GetMethodID(env, Class_class, "getMethods",

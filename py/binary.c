@@ -145,6 +145,9 @@ mp_obj_t mp_binary_get_val_array(char typecode, void *p, mp_uint_t index) {
         // Extension to CPython: array of objects
         case 'O':
             return ((mp_obj_t*)p)[index];
+        // Extension to CPython: array of pointers
+        case 'P':
+            return mp_obj_new_int((mp_int_t)((void**)p)[index]);
     }
     return MP_OBJ_NEW_SMALL_INT(val);
 }
@@ -182,7 +185,7 @@ mp_obj_t mp_binary_get_val(char struct_type, char val_type, byte **ptr) {
     size_t size = mp_binary_get_size(struct_type, val_type, &align);
     if (struct_type == '@') {
         // Make pointer aligned
-        p = (byte*)(((mp_uint_t)p + align - 1) & ~((mp_uint_t)align - 1));
+        p = (byte*)MP_ALIGN(p, (size_t)align);
         #if MP_ENDIANNESS_LITTLE
         struct_type = '<';
         #else
@@ -247,7 +250,7 @@ void mp_binary_set_val(char struct_type, char val_type, mp_obj_t val_in, byte **
     size_t size = mp_binary_get_size(struct_type, val_type, &align);
     if (struct_type == '@') {
         // Make pointer aligned
-        p = (byte*)(((mp_uint_t)p + align - 1) & ~((mp_uint_t)align - 1));
+        p = (byte*)MP_ALIGN(p, (size_t)align);
         if (MP_ENDIANNESS_LITTLE) {
             struct_type = '<';
         } else {
@@ -369,5 +372,8 @@ void mp_binary_set_val_array_from_int(char typecode, void *p, mp_uint_t index, m
             ((double*)p)[index] = val;
             break;
 #endif
+        // Extension to CPython: array of pointers
+        case 'P':
+            ((void**)p)[index] = (void*)val;
     }
 }
